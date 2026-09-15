@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Inloggen op Digitale Binas">
+  <title>Inloggen — Digitale Binas</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
+    :root {
+      --bg: #f3f6f3;
+      --surface: #fff;
+      --surface-2: #f7f9f6;
+      --ink: #17221d;
+      --muted: #718077;
+      --line: #dfe6e1;
+      --accent: #146b4a;
+      --accent-soft: #e2f1e9;
+      --shadow: 0 16px 40px rgba(27, 56, 42, .1);
+      --danger: #b42318;
+    }
+    [data-theme="dark"] {
+      --bg: #101713;
+      --surface: #18211c;
+      --surface-2: #1d2821;
+      --ink: #edf5f0;
+      --muted: #9aaba1;
+      --line: #2b3931;
+      --accent: #66c69b;
+      --accent-soft: #213c30;
+      --shadow: 0 16px 40px rgba(0, 0, 0, .32);
+      --danger: #ff8d80;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.45 "DM Sans", sans-serif;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 34px 32px 28px;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; margin-bottom: 22px; }
+    .brand-mark {
+      width: 36px; height: 36px; display: grid; place-items: center;
+      border-radius: 11px; color: #fff; background: var(--accent);
+      font: 800 19px Manrope, sans-serif;
+      box-shadow: 0 7px 18px color-mix(in srgb, var(--accent) 25%, transparent);
+    }
+    .brand strong { display: block; font: 800 15px Manrope, sans-serif; letter-spacing: -.25px; }
+    .brand small { display: block; color: var(--muted); font-size: 11px; margin-top: -2px; }
+    h1 { font: 800 28px/1.15 Manrope, sans-serif; letter-spacing: -.7px; margin: 0 0 8px; }
+    .lede { color: var(--muted); margin: 0 0 22px; }
+    label { display: block; font-weight: 600; font-size: 12px; margin-bottom: 7px; }
+    input {
+      width: 100%; height: 46px; border: 1px solid var(--line); border-radius: 13px;
+      background: var(--surface-2); color: var(--ink); padding: 0 14px; outline: 0; font: inherit;
+    }
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+    }
+    button {
+      width: 100%; min-height: 46px; margin-top: 14px; border: 0; border-radius: 13px;
+      background: var(--accent); color: #fff; font: 700 14px "DM Sans", sans-serif;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.05); }
+    button:disabled { opacity: .7; cursor: wait; }
+    .error {
+      min-height: 20px; margin: 12px 0 0; color: var(--danger); font-size: 13px;
+    }
+    .error:empty { display: none; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <span class="brand-mark">B</span>
+      <span><strong>Digitale Binas</strong><small>7e editie</small></span>
+    </div>
+    <h1>Inloggen</h1>
+    <p class="lede">Voer het wachtwoord in om de tabellen te openen.</p>
+    <form id="loginForm">
+      <label for="password">Wachtwoord</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit" id="loginButton">Inloggen</button>
+      <p class="error" id="loginError" role="alert"></p>
+    </form>
+  </main>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('binas:theme') || 'light';
+
+    fetch('/api/auth', { credentials: 'same-origin' })
+      .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+      .then(function (result) {
+        if (result.ok) location.replace('/');
+      })
+      .catch(function () {});
+
+    document.getElementById('loginForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+      var button = document.getElementById('loginButton');
+      var error = document.getElementById('loginError');
+      var password = document.getElementById('password').value;
+      button.disabled = true;
+      error.textContent = '';
+      try {
+        var response = await fetch('/api/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: password })
+        });
+        var data = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          error.textContent = data.error || 'Onjuist wachtwoord.';
+          button.disabled = false;
+          document.getElementById('password').focus();
+          document.getElementById('password').select();
+          return;
+        }
+        location.replace('/');
+      } catch (err) {
+        error.textContent = 'Kon niet inloggen. Probeer het opnieuw.';
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

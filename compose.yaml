@@ -1,0 +1,44 @@
+name: binas-recreation
+services:
+    binas:
+        build:
+            context: /home/sam/binas-recreation
+            dockerfile: Dockerfile
+        cpu_shares: 90
+        command: []
+        deploy:
+            resources:
+                limits:
+                    memory: "8265924608"
+        environment:
+            DEEPSEEK_API_KEY: sk-51525bf175374d91a5ac587271fc6992
+            HOST: 127.0.0.1
+            PORT: "8765"
+            SERVE_STATIC: "0"
+        env_file:
+            - /home/sam/binas-recreation/.env
+        image: local/binas-recreation:latest
+        labels:
+            icon: https://api.bruna.nl/images/active/carrousel/fullsize/9789001007249_front.jpg
+        networks:
+            default: null
+        ports:
+            - mode: ingress
+              target: 80
+              published: "8080"
+              protocol: tcp
+        restart: unless-stopped
+networks:
+    default:
+        name: binas-recreation_default
+x-casaos:
+    author: self
+    category: self
+    hostname: binas.hijmanssam.dev
+    icon: https://api.bruna.nl/images/active/carrousel/fullsize/9789001007249_front.jpg
+    index: /
+    is_uncontrolled: false
+    port_map: ""
+    scheme: https
+    title:
+        custom: Binas

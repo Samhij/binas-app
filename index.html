@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Lokale digitale Binas-tabelzoeker">
+  <title>Digitale Binas — tabelzoeker</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=highlight5">
+  <style>
+    .chat-fab { position: fixed !important; z-index: 80; right: 22px; bottom: 22px; width: 54px; height: 54px; border: 0; border-radius: 18px; background: var(--accent, #146b4a); color: #fff; cursor: pointer; display: grid; place-items: center; box-shadow: 0 14px 30px rgba(20,107,74,.38); }
+    .chat-fab svg { pointer-events: none; }
+    .chat-fab-close { display: none; }
+    .chat-fab.open .chat-fab-open { display: none; }
+    .chat-fab.open .chat-fab-close { display: block; }
+    #chatHeaderButton svg { pointer-events: none; }
+    .chat-popup { position: fixed !important; z-index: 80; right: 22px; bottom: 88px; left: auto; top: auto; inset: auto 22px 88px auto; margin: 0 !important; padding: 0 !important; width: min(400px, calc(100vw - 24px)) !important; max-width: none; height: min(560px, calc(100vh - 186px)); display: none !important; flex-direction: column; background: var(--surface, #fff); color: var(--ink, #17221d); border: 1px solid var(--line, #dfe6e1); border-radius: 20px; box-shadow: 0 24px 70px rgba(12,28,20,.28); overflow: hidden; }
+    .chat-popup.open, .chat-popup[open] { display: flex !important; }
+    @media (max-width: 850px) {
+      .chat-fab { right: 14px; bottom: 14px; }
+      .chat-popup { right: 8px; left: 8px; bottom: 78px; width: auto !important; inset: auto 8px 78px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-button mobile-only" id="menuButton" aria-label="Open inhoudsopgave">☰</button>
+    <a class="brand" href="index.html" aria-label="Digitale Binas">
+      <span class="brand-mark">B</span>
+      <span><strong>Digitale Binas</strong><small>7e editie</small></span>
+    </a>
+    <nav class="top-actions" aria-label="Hoofdnavigatie">
+      <button class="icon-button" id="themeButton" aria-label="Wissel thema" title="Wissel thema">◐</button>
+      <button type="button" class="icon-button" id="chatHeaderButton" aria-label="Open Binas-assistent" title="Binas-assistent" onclick="toggleBinasChat(true)">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+      </button>
+      <button class="pill-button" id="infoButton">Over deze app</button>
+    </nav>
+  </header>
+
+  <main class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="search-wrap">
+        <span aria-hidden="true">⌕</span>
+        <input id="searchInput" type="search" placeholder="Zoek tabel of nummer…" autocomplete="off">
+        <kbd>/</kbd>
+      </div>
+
+      <div class="quick-tabs" role="tablist" aria-label="Weergave">
+        <button class="quick-tab active" data-view="contents">Inhoud</button>
+        <button class="quick-tab" data-view="favorites">★ Favorieten <span id="favoriteCount">0</span></button>
+        <button class="quick-tab" data-view="recent">Recent</button>
+      </div>
+
+      <div class="subject-filters" id="subjectFilters" aria-label="Vakkenfilter">
+        <button class="subject active" data-theme-filter="all">Alles</button>
+        <button class="subject" data-theme-filter="natuurkunde">Natuurkunde</button>
+        <button class="subject" data-theme-filter="scheikunde">Scheikunde</button>
+        <button class="subject" data-theme-filter="biologie">Biologie</button>
+        <button class="subject" data-theme-filter="wiskunde">Wiskunde</button>
+      </div>
+
+      <div class="list-summary"><span id="resultSummary">Tabellen laden…</span><button id="expandButton">Alles inklappen</button></div>
+      <div class="table-list" id="tableList" aria-live="polite"></div>
+    </aside>
+
+    <section class="viewer-panel">
+      <div class="viewer-toolbar">
+        <div class="current-table">
+          <span class="table-badge" id="currentLabel">1</span>
+          <span><strong id="currentTitle">Grieks alfabet</strong><small id="currentMeta">Algemeen · pagina 11</small></span>
+        </div>
+        <div class="viewer-actions">
+          <button class="icon-button" id="favoriteCurrent" aria-label="Voeg huidige tabel toe aan favorieten" title="Favoriet">☆</button>
+          <label class="page-jump">Pagina <input id="pageInput" type="number" min="1" max="317" value="11"></label>
+          <button class="pill-button compact" id="openPdfButton">Open PDF</button>
+        </div>
+      </div>
+      <div class="pdf-wrap">
+        <div class="pdf-viewer" id="pdfViewer" role="document" aria-label="Binas PDF" tabindex="0">
+          <div class="pdf-loading" id="pdfLoading"><span class="spinner"></span><b>PDF laden…</b><small>De eerste keer kan dit even duren.</small></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="backdrop" id="backdrop"></div>
+  <dialog id="infoDialog">
+    <button class="dialog-close" id="closeInfo" aria-label="Sluiten">×</button>
+    <span class="eyebrow">LOKALE RECREATIE</span>
+    <h2>De Binas, zonder het bladeren.</h2>
+    <p>Zoek op onderwerp, titel of tabelnummer en spring direct naar de juiste pagina in je eigen PDF.</p>
+    <div class="feature-grid">
+      <div><b>383</b><span>tabellen en subtabelverwijzingen</span></div>
+      <div><b>100</b><span>genummerde hoofdtabellen</span></div>
+      <div><b>Lokaal</b><span>favorieten en recent bekeken</span></div>
+    </div>
+    <p class="muted">Deze onafhankelijke recreatie gebruikt uitsluitend het door jou aangeleverde, legaal verkregen PDF-bestand.</p>
+  </dialog>
+
+  <button type="button" class="chat-fab" id="chatToggle" aria-label="Open Binas-assistent" aria-expanded="false" title="Binas-assistent" onclick="toggleBinasChat()">
+    <svg class="chat-fab-open" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+    <svg class="chat-fab-close" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+  <dialog class="chat-popup" id="chatPopup" aria-label="Binas-assistent" aria-hidden="true">
+    <header class="chat-header">
+      <span class="chat-avatar" aria-hidden="true">AI</span>
+      <span>
+        <strong>Binas-assistent</strong>
+        <small>Zoekt in de PDF · DeepSeek</small>
+      </span>
+      <button type="button" class="dialog-close" id="chatClose" aria-label="Sluit assistent" onclick="toggleBinasChat(false)">×</button>
+    </header>
+    <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
+    <form class="chat-form" id="chatForm">
+      <textarea id="chatInput" rows="1" placeholder="Vraag iets over Binas…" autocomplete="off"></textarea>
+      <button type="submit" class="chat-send" aria-label="Verstuur">➤</button>
+    </form>
+  </dialog>
+
+  <script>
+    window.toggleBinasChat = function (force) {
+      var popup = document.getElementById('chatPopup');
+      var fab = document.getElementById('chatToggle');
+      if (!popup) return false;
+      var isOpen = popup.classList.contains('open') || popup.open === true;
+      var open = typeof force === 'boolean' ? force : !isOpen;
+      popup.classList.toggle('open', open);
+      popup.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (fab) {
+        fab.classList.toggle('open', open);
+        fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+      if (open) {
+        if (typeof popup.show === 'function' && !popup.open) popup.show();
+        var input = document.getElementById('chatInput');
+        if (input) setTimeout(function () { input.focus(); }, 0);
+      } else if (typeof popup.close === 'function' && popup.open) {
+        popup.close();
+      }
+      return open;
+    };
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') window.toggleBinasChat(false);
+    });
+  </script>
+  <script type="module" src="app.js?v=highlight6"></script>
+</body>
+</html>
