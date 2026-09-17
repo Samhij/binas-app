@@ -7,8 +7,10 @@ import hashlib
 import hmac
 import json
 import os
+import queue
 import re
 import sys
+import threading
 import time
 import unicodedata
 import urllib.error
@@ -19,6 +21,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
+DEV_WATCH_SUFFIXES = {'.html', '.js', '.css', '.json'}
+DEV_RELOAD_SCRIPT = (
+    '<script>(function(){var s=new EventSource("/__dev_reload");'
+    's.onmessage=function(){location.reload()};})();</script>'
+)
 COOKIE_NAME = 'binas_session'
 SESSION_MAX_AGE = 30 * 24 * 3600
 PUBLIC_PATHS = {'/login.html', '/favicon.svg'}
@@ -164,6 +171,58 @@ def load_index():
 
 
 INDEX = None
+reload_clients: list[queue.Queue[str]] = []
+reload_clients_lock = threading.Lock()
+
+
+def dev_mode() -> bool:
+    return os.environ.get('DEV', '').strip().lower() in {'1', 'true', 'yes'}
+
+
+def notify_dev_reload(reload_index: bool = False):
+    global INDEX
+    if reload_index:
+        INDEX = load_index()
+    with reload_clients_lock:
+        for client in reload_clients:
+            client.put('reload')
+
+
+def watch_dev_files():
+    mtimes: dict[str, float] = {}
+    while True:
+        changed_data = False
+        changed_ui = False
+        for path in ROOT.rglob('*'):
+            if not path.is_file() or path.suffix not in DEV_WATCH_SUFFIXES:
+                continue
+            if any(part.startswith('.') for part in path.relative_to(ROOT).parts):
+                continue
+            key = str(path)
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            previous = mtimes.get(key)
+            mtimes[key] = mtime
+            if previous is None or mtime == previous:
+                continue
+            if path.parent.name == 'data' and path.suffix == '.json':
+                changed_data = True
+            else:
+                changed_ui = True
+        if changed_data:
+            notify_dev_reload(reload_index=True)
+        elif changed_ui:
+            notify_dev_reload()
+        time.sleep(1)
+
+
+def start_dev_watcher():
+    if not dev_mode():
+        return
+    thread = threading.Thread(target=watch_dev_files, name='dev-file-watcher', daemon=True)
+    thread.start()
 
 
 def search_binas(query: str, limit_pages=6, limit_tables=10):
@@ -590,6 +649,59 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Content-Length', '0')
         self.end_headers()
 
+    def html_path(self, path: str) -> str:
+        return '/index.html' if path in {'', '/'} else path
+
+    def serve_html_with_reload(self, path: str):
+        rel = self.html_path(path).lstrip('/')
+        file_path = ROOT / rel
+        if not file_path.is_file():
+            self.send_error(404)
+            return
+        body = file_path.read_text(encoding='utf-8')
+        if '</body>' in body:
+            body = body.replace('</body>', DEV_RELOAD_SCRIPT + '</body>', 1)
+        else:
+            body += DEV_RELOAD_SCRIPT
+        encoded = body.encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Content-Length', str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def serve_static_file(self):
+        path = urlparse(self.path).path
+        if dev_mode() and (path == '/' or path.endswith('.html')):
+            return self.serve_html_with_reload(path)
+        return super().do_GET()
+
+    def handle_dev_reload_sse(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'keep-alive')
+        self.end_headers()
+        client: queue.Queue[str] = queue.Queue()
+        with reload_clients_lock:
+            reload_clients.append(client)
+        try:
+            while True:
+                try:
+                    client.get(timeout=30)
+                    self.wfile.write(b'data: reload\n\n')
+                    self.wfile.flush()
+                except queue.Empty:
+                    self.wfile.write(b': keepalive\n\n')
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            with reload_clients_lock:
+                if client in reload_clients:
+                    reload_clients.remove(client)
+
     def is_authenticated(self) -> bool:
         if not auth_required():
             return True
@@ -640,6 +752,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == '/__dev_reload':
+            if not dev_mode():
+                return self.send_json(404, {'error': 'Niet gevonden'})
+            return self.handle_dev_reload_sse()
         if path == '/api/auth':
             return self.send_auth_status()
         if path == '/api/health':
@@ -657,14 +773,14 @@ class Handler(SimpleHTTPRequestHandler):
         if path in PUBLIC_PATHS:
             if os.environ.get('SERVE_STATIC', '1') == '0':
                 return self.send_json(404, {'error': 'Niet gevonden'})
-            return super().do_GET()
+            return self.serve_static_file()
         if auth_required() and not self.is_authenticated():
             if path.startswith('/api/'):
                 return self.send_json(401, {'error': 'Niet ingelogd.'})
             return self.send_redirect('/login.html')
         if os.environ.get('SERVE_STATIC', '1') == '0':
             return self.send_json(404, {'error': 'Niet gevonden'})
-        return super().do_GET()
+        return self.serve_static_file()
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -725,8 +841,14 @@ def main():
     host = os.environ.get('HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', '8080'))
     server = ThreadingHTTPServer((host, port), Handler)
+    start_dev_watcher()
     auth_note = 'login aan' if auth_required() else 'geen SITE_PASSWORD, site is open'
-    print(f'Binas server op http://{host}:{port}  (PDF-pagina’s: {len(INDEX["pages"])}, {auth_note})', flush=True)
+    dev_note = ', live reload aan' if dev_mode() else ''
+    print(
+        f'Binas server op http://{host}:{port}  '
+        f'(PDF-pagina’s: {len(INDEX["pages"])}, {auth_note}{dev_note})',
+        flush=True,
+    )
     server.serve_forever()
 
 

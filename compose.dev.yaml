@@ -1,0 +1,20 @@
+name: binas-dev
+
+services:
+  binas-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: local/binas-dev:latest
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      SERVE_STATIC: "1"
+      DEV: "1"
+    volumes:
+      - .:/app
+    restart: unless-stopped

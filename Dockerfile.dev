@@ -1,0 +1,16 @@
+FROM python:3.12-alpine
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+COPY server.py ./
+
+EXPOSE 8080
+
+ENV HOST=0.0.0.0 \
+    PORT=8080 \
+    SERVE_STATIC=1 \
+    DEV=1
+
+CMD ["python3", "server.py"]

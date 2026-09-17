@@ -16,9 +16,25 @@ Open daarna <http://localhost:8080>.
 
 Direct openen als `file://` werkt niet volledig, omdat browsers lokale JSON-verzoeken blokkeren.
 
+## Docker — development
+
+For local development with hot reload, use the dev Compose file. It runs `server.py` directly (no Nginx), mounts your working tree into the container, and reloads the browser when HTML, CSS, JS, or JSON files change.
+
+```sh
+docker compose -f compose.dev.yaml up --build
+```
+
+Open <http://localhost:8080>. Edit files locally; the page refreshes automatically. Changes to `server.py` require restarting the container:
+
+```sh
+docker compose -f compose.dev.yaml restart
+```
+
+Put your DeepSeek key and site password in `.env` before starting, same as the local Python workflow.
+
 ## Homelab + Cloudflare Tunnel
 
-This directory includes a `Dockerfile` and `compose.yaml`. On the homelab host:
+This directory includes a production `Dockerfile` / `compose.yaml` and a development `Dockerfile.dev` / `compose.dev.yaml`. On the homelab host:
 
 ```sh
 cd /path/to/binas-recreation
