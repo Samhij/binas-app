@@ -1,9 +1,7 @@
-name: binas-recreation
+name: binas-app
 services:
     binas:
-        build:
-            context: /home/sam/binas-recreation
-            dockerfile: Dockerfile
+        build: .
         cpu_shares: 90
         command: []
         deploy:
@@ -16,8 +14,8 @@ services:
             PORT: "8765"
             SERVE_STATIC: "0"
         env_file:
-            - /home/sam/binas-recreation/.env
-        image: local/binas-recreation:latest
+            - .env
+        image: local/binas-app:latest
         labels:
             icon: https://api.bruna.nl/images/active/carrousel/fullsize/9789001007249_front.jpg
         networks:
@@ -30,7 +28,7 @@ services:
         restart: unless-stopped
 networks:
     default:
-        name: binas-recreation_default
+        name: binas-app_default
 x-casaos:
     author: self
     category: self
