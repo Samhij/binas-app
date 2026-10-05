@@ -6,35 +6,24 @@
   <meta name="description" content="Lokale digitale Binas-tabelzoeker">
   <title>Digitale Binas — tabelzoeker</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=highlight5">
+  <link rel="stylesheet" href="styles.css?v=cyfers1">
   <style>
-    .chat-fab { position: fixed !important; z-index: 80; right: 22px; bottom: 22px; width: 54px; height: 54px; border: 0; border-radius: 18px; background: var(--accent, #146b4a); color: #fff; cursor: pointer; display: grid; place-items: center; box-shadow: 0 14px 30px rgba(20,107,74,.38); }
-    .chat-fab svg { pointer-events: none; }
-    .chat-fab-close { display: none; }
-    .chat-fab.open .chat-fab-open { display: none; }
-    .chat-fab.open .chat-fab-close { display: block; }
-    #chatHeaderButton svg { pointer-events: none; }
-    .chat-popup { position: fixed !important; z-index: 80; right: 22px; bottom: 88px; left: auto; top: auto; inset: auto 22px 88px auto; margin: 0 !important; padding: 0 !important; width: min(400px, calc(100vw - 24px)) !important; max-width: none; height: min(560px, calc(100vh - 186px)); display: none !important; flex-direction: column; background: var(--surface, #fff); color: var(--ink, #17221d); border: 1px solid var(--line, #dfe6e1); border-radius: 20px; box-shadow: 0 24px 70px rgba(12,28,20,.28); overflow: hidden; }
-    .chat-popup.open, .chat-popup[open] { display: flex !important; }
-    @media (max-width: 850px) {
-      .chat-fab { right: 14px; bottom: 14px; }
-      .chat-popup { right: 8px; left: 8px; bottom: 78px; width: auto !important; inset: auto 8px 78px 8px; }
-    }
+    .chat-fab svg, #chatHeaderButton svg { pointer-events: none; }
   </style>
 </head>
 <body>
   <header class="topbar">
     <button class="icon-button mobile-only" id="menuButton" aria-label="Open inhoudsopgave">☰</button>
     <a class="brand" href="index.html" aria-label="Digitale Binas">
-      <span class="brand-mark">B</span>
-      <span><strong>Digitale Binas</strong><small>7e editie</small></span>
+      <strong>Binas</strong>
+      <small>7e editie</small>
     </a>
     <nav class="top-actions" aria-label="Hoofdnavigatie">
-      <button class="icon-button" id="themeButton" aria-label="Wissel thema" title="Wissel thema">◐</button>
+      <button class="pill-button" id="themeButton" aria-label="Wissel thema" title="Wissel thema">Thema</button>
       <button type="button" class="icon-button" id="chatHeaderButton" aria-label="Open Binas-assistent" title="Binas-assistent" onclick="toggleBinasChat(true)">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
       </button>
-      <button class="pill-button" id="infoButton">Over deze app</button>
+      <button class="pill-button" id="infoButton">Info</button>
     </nav>
   </header>
 
@@ -87,7 +76,7 @@
   <div class="backdrop" id="backdrop"></div>
   <dialog id="infoDialog">
     <button class="dialog-close" id="closeInfo" aria-label="Sluiten">×</button>
-    <span class="eyebrow">LOKALE RECREATIE</span>
+    <span class="eyebrow">Lokale recreatie</span>
     <h2>De Binas, zonder het bladeren.</h2>
     <p>Zoek op onderwerp, titel of tabelnummer en spring direct naar de juiste pagina in je eigen PDF.</p>
     <div class="feature-grid">
