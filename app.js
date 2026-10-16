@@ -1,4 +1,4 @@
-import { initChat } from './chat.js?v=highlight6';
+import { initChat } from './chat.js?v=pdfload1';
 
 let pdfjsLib = null;
 
@@ -196,23 +196,40 @@ function bindEvents() {
 }
 
 async function initPdf() {
+  const loading = el('pdfLoading');
+  const loadingHint = loading.querySelector('small');
   try {
     pdfjsLib = await import('./vendor/pdfjs/pdf.min.mjs');
     pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.mjs';
   } catch (error) {
-    el('pdfLoading').textContent = 'De PDF-module kon niet laden. Controleer de webserver-MIME types.';
-    el('pdfLoading').classList.add('error');
+    loading.textContent = 'De PDF-module kon niet laden. Controleer de webserver-MIME types.';
+    loading.classList.add('error');
     console.error(error);
     return;
   }
-  const loadingTask = pdfjsLib.getDocument({ url: 'assets/Binas.pdf' });
+  // disableAutoFetch: only pull byte ranges for pages we actually render (77MB PDF).
+  // Requires Accept-Ranges / HTTP 206 from the server — otherwise PDF.js falls back to one full download.
+  const loadingTask = pdfjsLib.getDocument({
+    url: 'assets/Binas.pdf',
+    disableAutoFetch: true,
+    disableStream: false,
+  });
+  loadingTask.onProgress = ({ loaded, total }) => {
+    if (!loadingHint) return;
+    if (total > 0) {
+      const pct = Math.min(100, Math.round((loaded / total) * 100));
+      loadingHint.textContent = `${pct}% · alleen zichtbare pagina’s worden geladen`;
+    } else if (loaded > 0) {
+      loadingHint.textContent = `${Math.round(loaded / 1024 / 1024)} MB geladen…`;
+    }
+  };
   state.pdf = await loadingTask.promise;
   const firstPage = await state.pdf.getPage(1);
   const viewport = firstPage.getViewport({ scale: 1 });
   state.pageRatio = viewport.height / viewport.width;
   buildPagePlaceholders();
   state.pdfReady = true;
-  el('pdfLoading').classList.add('hidden');
+  loading.classList.add('hidden');
   const location = state.pendingLocation || { page: state.visiblePage, yFraction: 0 };
   state.pendingLocation = null;
   jumpToLocation(location.page, location.yFraction);
@@ -304,9 +321,16 @@ async function renderPage(pageNumber) {
 }
 
 function renderAround(pageNumber) {
-  for (let page = Math.max(1, pageNumber - 2); page <= Math.min(state.pdf?.numPages || 317, pageNumber + 2); page++) renderPage(page);
+  const lastPage = state.pdf?.numPages || 317;
+  const first = Math.max(1, pageNumber - 1);
+  const last = Math.min(lastPage, pageNumber + 1);
+  // Current page first so its range requests aren't competing with neighbors.
+  renderPage(pageNumber);
+  for (let page = first; page <= last; page++) {
+    if (page !== pageNumber) renderPage(page);
+  }
   for (const rendered of [...state.renderedPages.keys()]) {
-    if (Math.abs(rendered - pageNumber) <= 8) continue;
+    if (Math.abs(rendered - pageNumber) <= 4) continue;
     const holder = el('pdfViewer').querySelector(`[data-page="${rendered}"]`);
     clearPageSurface(holder);
     if (holder) holder.style.height = `${Math.round(pageDisplayWidth() * state.pageRatio)}px`;

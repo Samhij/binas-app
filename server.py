@@ -671,11 +671,104 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def parse_byte_range(self, file_size: int) -> tuple[int, int] | None:
+        """Parse a single bytes Range header into inclusive (start, end), or None."""
+        raw = self.headers.get('Range')
+        if not raw or file_size <= 0:
+            return None
+        unit, _, spec = raw.strip().partition('=')
+        if unit.strip().lower() != 'bytes' or ',' in spec:
+            return None
+        start_s, _, end_s = spec.strip().partition('-')
+        try:
+            if start_s == '':
+                # suffix: last N bytes
+                length = int(end_s)
+                if length <= 0:
+                    return None
+                start = max(0, file_size - length)
+                end = file_size - 1
+            elif end_s == '':
+                start = int(start_s)
+                end = file_size - 1
+            else:
+                start = int(start_s)
+                end = int(end_s)
+        except ValueError:
+            return None
+        if start < 0 or start >= file_size or end < start:
+            return None
+        return start, min(end, file_size - 1)
+
+    def serve_file_with_ranges(self, url_path: str):
+        """Serve a static file with Accept-Ranges / 206 support (needed by PDF.js)."""
+        rel = url_path.lstrip('/') or 'index.html'
+        file_path = (ROOT / rel).resolve()
+        try:
+            file_path.relative_to(ROOT)
+        except ValueError:
+            return self.send_error(404, 'File not found')
+        if not file_path.is_file():
+            return self.send_error(404, 'File not found')
+
+        try:
+            stat = file_path.stat()
+        except OSError:
+            return self.send_error(404, 'File not found')
+
+        file_size = stat.st_size
+        ctype = self.guess_type(str(file_path))
+        cache = 'public, max-age=604800' if file_path.suffix.lower() == '.pdf' else 'no-cache'
+        byte_range = self.parse_byte_range(file_size)
+
+        if byte_range is None and self.headers.get('Range'):
+            self.send_response(416)
+            self.send_header('Content-Range', f'bytes */{file_size}')
+            self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+
+        if byte_range is None:
+            start, end = 0, file_size - 1 if file_size else 0
+            status = 200
+            content_length = file_size
+        else:
+            start, end = byte_range
+            status = 206
+            content_length = end - start + 1
+
+        self.send_response(status)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Cache-Control', cache)
+        self.send_header('Last-Modified', self.date_time_string(stat.st_mtime))
+        self.send_header('Content-Length', str(content_length))
+        if status == 206:
+            self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
+        self.end_headers()
+
+        if self.command == 'HEAD' or content_length == 0:
+            return
+
+        try:
+            with file_path.open('rb') as handle:
+                handle.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk = handle.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def serve_static_file(self):
         path = urlparse(self.path).path
         if dev_mode() and (path == '/' or path.endswith('.html')):
             return self.serve_html_with_reload(path)
-        return super().do_GET()
+        return self.serve_file_with_ranges(path)
 
     def handle_dev_reload_sse(self):
         self.send_response(200)
