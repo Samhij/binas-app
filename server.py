@@ -35,7 +35,8 @@ STOPWORDS = {
     'er', 'dit', 'of', 'uit', 'tot', 'over', 'the', 'a', 'an', 'of', 'to', 'and',
     'what', 'how', 'where', 'which', 'can', 'me', 'my', 'ik', 'je', 'we', 'zo',
 }
-TABLE_QUERY_RE = re.compile(r'(?:tabel\s*)?(\d{1,3}[a-z]?)\b', re.I)
+TABLE_QUERY_RE = re.compile(r'(?:tabel\s*)?(\d{1,3}(?:[.\s]*[a-z])?)\b', re.I)
+CONTEXT_PAGE_CHAR_BUDGET = 55_000
 
 
 def load_dotenv():
@@ -127,6 +128,29 @@ def flatten_tables(sections) -> list[dict]:
     return tables
 
 
+def normalize_table_label(raw: str) -> str:
+    return normalize(raw).replace(' ', '').replace('.', '')
+
+
+def table_labels_from_query(query: str) -> set[str]:
+    labels = set()
+    for match in TABLE_QUERY_RE.finditer(query or ''):
+        label = normalize_table_label(match.group(1))
+        if label:
+            labels.add(label)
+    return labels
+
+
+def build_table_index_text(tables: list[dict]) -> str:
+    lines = [f'Binas 7e editie — volledige tabelindex ({len(tables)} tabellen):']
+    for table in tables:
+        lines.append(
+            f"- Tabel {table['displayLabel']}: {table['title']} "
+            f"({table['section']}, pagina {table['page']})"
+        )
+    return '\n'.join(lines)
+
+
 def make_table(section, theme, item, display_label, parent_label=''):
     title = item.get('title', '')
     label = str(item.get('label', ''))
@@ -165,9 +189,18 @@ def load_index():
                 'norm': normalize(text),
             })
     by_page = {}
+    by_label = {}
     for table in tables:
         by_page.setdefault(table['page'], []).append(table)
-    return {'tables': tables, 'pages': pages, 'tables_by_page': by_page, 'align': align}
+        by_label.setdefault(table['label_norm'], []).append(table)
+    return {
+        'tables': tables,
+        'pages': pages,
+        'tables_by_page': by_page,
+        'tables_by_label': by_label,
+        'table_index': build_table_index_text(tables),
+        'align': align,
+    }
 
 
 INDEX = None
@@ -225,11 +258,11 @@ def start_dev_watcher():
     thread.start()
 
 
-def search_binas(query: str, limit_pages=6, limit_tables=10):
+def search_binas(query: str, limit_pages=10, limit_tables=16):
     q = (query or '').strip()
     tokens = tokenize(q)
     q_norm = normalize(q)
-    label_hits = {m.group(1).lower() for m in TABLE_QUERY_RE.finditer(q)}
+    label_hits = table_labels_from_query(q)
 
     table_scores = []
     for table in INDEX['tables']:
@@ -286,31 +319,82 @@ def search_binas(query: str, limit_pages=6, limit_tables=10):
     return top_tables, chosen_pages
 
 
+def tables_for_labels(label_hits: set[str]) -> list[dict]:
+    tables = []
+    seen = set()
+    for label in label_hits:
+        for table in INDEX['tables_by_label'].get(label, []):
+            key = table['displayLabel']
+            if key in seen:
+                continue
+            seen.add(key)
+            tables.append(table)
+    return tables
+
+
 def build_context(query: str) -> str:
+    label_hits = table_labels_from_query(query)
     tables, pages = search_binas(query)
     seen = {table['displayLabel'] for table in tables}
+    for table in tables_for_labels(label_hits):
+        if table['displayLabel'] not in seen:
+            tables.append(table)
+            seen.add(table['displayLabel'])
     for page in pages:
         for table in INDEX['tables_by_page'].get(page['page'], []):
             if table['displayLabel'] not in seen:
                 tables.append(table)
                 seen.add(table['displayLabel'])
-    tables = tables[:12]
-    lines = ['Binas 7e editie — relevante tabellen:']
+    tables.sort(key=lambda table: (table['page'], table['displayLabel']))
+    tables = tables[:20]
+
+    page_order = [page['page'] for page in pages]
+    page_seen = set(page_order)
+    for table in tables_for_labels(label_hits):
+        if table['page'] not in page_seen:
+            page_order.append(table['page'])
+            page_seen.add(table['page'])
+    for table in tables[:8]:
+        if table['page'] not in page_seen:
+            page_order.append(table['page'])
+            page_seen.add(table['page'])
+
+    lines = [INDEX['table_index'], '']
+    lines.append('Tabellen die het sterkst bij deze vraag passen:')
     if tables:
         for table in tables:
             lines.append(
                 f"- Tabel {table['displayLabel']}: {table['title']} ({table['section']}, pagina {table['page']})"
             )
     else:
-        lines.append('- Geen sterke tabeltreffer in de inhoudsopgave.')
+        lines.append('- Geen extra tabeltreffer bovenop de volledige index.')
     lines.append('')
-    if pages:
-        lines.append('Relevante PDF-pagina’s:')
-        for page in pages:
-            excerpt = page['text'][:2800]
-            lines.append(f'\n--- pagina {page["page"]} ---\n{excerpt}')
+
+    pages_by_num = {page['page']: page for page in INDEX['pages']}
+    if page_order and pages_by_num:
+        lines.append('Relevante PDF-pagina’s (volledige OCR-tekst binnen het contextbudget):')
+        used = 0
+        included = 0
+        for page_num in page_order:
+            page = pages_by_num.get(page_num)
+            if not page:
+                continue
+            remaining = CONTEXT_PAGE_CHAR_BUDGET - used
+            if remaining <= 0:
+                break
+            text = page['text'] or ''
+            if not text.strip():
+                continue
+            excerpt = text[:remaining]
+            used += len(excerpt) + 40
+            included += 1
+            lines.append(f'\n--- pagina {page_num} ---\n{excerpt}')
+        if not included:
+            lines.append('- Geen doorzoekbare PDF-tekst voor de geselecteerde pagina’s.')
+    elif not INDEX['pages']:
+        lines.append('Geen doorzoekbare PDF-tekst geladen; gebruik de volledige tabelindex.')
     else:
-        lines.append('Geen doorzoekbare PDF-tekst gevonden; gebruik de tabelindex.')
+        lines.append('Geen sterke paginatreffer; gebruik de volledige tabelindex.')
     return '\n'.join(lines)
 
 
@@ -345,7 +429,8 @@ def lookup_table(label='', title='', page=None):
 
 
 SYSTEM_PROMPT = """Je bent de Binas-assistent voor de 7e editie.
-Beantwoord de vraag van de gebruiker uitsluitend met de gegeven Binas-context (inhoudsopgave + PDF-tekst).
+Beantwoord de vraag van de gebruiker uitsluitend met de gegeven Binas-context (volledige tabelindex + PDF-tekst).
+De volledige tabelindex staat altijd in de context; gebruik die om tabelnummers en pagina’s te vinden.
 Verzin geen waarden die niet in de context staan. Als iets ontbreekt, zeg dat eerlijk en wijs de meest nabije tabel aan.
 Antwoord in het Nederlands, tenzij de gebruiker een andere taal gebruikt.
 Geef concrete getallen, eenheden en tabelnummers wanneer die in de context staan.
